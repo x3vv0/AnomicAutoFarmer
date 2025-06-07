@@ -1,5 +1,5 @@
 --// Config
-
+print("Ngger")
 getgenv().whscript = "Anomic Autofarm Status"
 getgenv().webhookexecUrl = "https://discord.com/api/webhooks/1379350254222184530/h8uVipcikI6eYYj8kgzwpqF1j6Vk53w_Ll3tTPvxBgq4pmsLvOOFPZn6_I2-oMmrYpcX" -- ur webhook nigga X
 getgenv().ExecLogSecret = false
