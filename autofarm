@@ -90,8 +90,7 @@ task.spawn(function()
 							}}
 						})
 
-						-- Queue the script to auto-run after teleport
-						queue_on_teleport('loadstring(game:HttpGet("https://your-raw-script-url.com/script.lua"))()')
+						queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/x3vv0/AnomicAutoFarmer/refs/heads/main/autofarm"))()')
 						TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServer.id, player)
 						break
 					else
