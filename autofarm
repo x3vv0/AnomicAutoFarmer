@@ -1,0 +1,332 @@
+--// Config
+
+getgenv().whscript = "Anomic Autofarm Status"
+getgenv().webhookexecUrl = "https://discord.com/api/webhooks/1379350254222184530/h8uVipcikI6eYYj8kgzwpqF1j6Vk53w_Ll3tTPvxBgq4pmsLvOOFPZn6_I2-oMmrYpcX" -- ur webhook nigga X
+getgenv().ExecLogSecret = false
+
+--// Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local Stats = game:GetService("Stats")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+
+local printerEarned = 0
+local totalMoneyEarned = 0
+
+local printerPositions = {}
+local printerTheftLogged = {}
+
+
+--// Utility Functions
+
+local function sendWebhook(data)
+	local payload = HttpService:JSONEncode(data)
+	local headers = {["content-type"] = "application/json"}
+	local requestFunction = http_request or request or (syn and syn.request) or (fluxus and fluxus.request) or (http and http.request)
+	pcall(function()
+		requestFunction({Url = getgenv().webhookexecUrl, Body = payload, Method = "POST", Headers = headers})
+	end)
+end
+
+local function getGMT8DateTime()
+	local gmt8 = tick() + (8 * 60 * 60)
+	return os.date("!%Y-%m-%d", gmt8), os.date("!%I:%M:%S %p", gmt8)
+end
+
+local function identifyexecutor()
+	if syn then
+		return "Synapse X"
+	elseif KRNL_LOADED then
+		return "Krnl"
+	elseif isexecutorclosure then
+		return "Executor"
+	elseif secure_load then
+		return "SecureLoad"
+	else
+		return "Unknown"
+	end
+end
+
+--// Auto Reconnect Logic
+
+task.spawn(function()
+	repeat wait() until game.CoreGui:FindFirstChild("RobloxPromptGui")
+	local po = game.CoreGui.RobloxPromptGui:WaitForChild("promptOverlay")
+
+	po.ChildAdded:Connect(function(a)
+		if a.Name == "ErrorPrompt" then
+			while true do
+				local success, servers = pcall(function()
+					return HttpService:JSONDecode(game:HttpGet(
+						string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100", game.PlaceId)
+					))
+				end)
+
+				if success and servers and servers.data then
+					local targetServer
+					for _, s in ipairs(servers.data) do
+						if s.playing < s.maxPlayers and s.id ~= game.JobId then
+							targetServer = s
+							break
+						end
+					end
+
+					if targetServer then
+						local dateStr, timeStr = getGMT8DateTime()
+						sendWebhook({
+							content = "**" .. player.Name .. " attempting to reconnect to smallest server...**",
+							embeds = {{
+								title = "🔁 Reconnect Attempt",
+								description = "Teleporting to server: " .. targetServer.id .. " with " .. targetServer.playing .. " players.",
+								color = tonumber(0x3498db),
+								footer = { text = "Reconnect | " .. dateStr .. " " .. timeStr }
+							}}
+						})
+
+						-- Queue the script to auto-run after teleport
+						queue_on_teleport('loadstring(game:HttpGet("https://your-raw-script-url.com/script.lua"))()')
+						TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServer.id, player)
+						break
+					else
+						sendWebhook({ content = "**Reconnect failed: No valid server found. Retrying in 10s.**" })
+						wait(10)
+					end
+				else
+					sendWebhook({ content = "**Failed to fetch server list. Retrying in 10s.**" })
+					wait(10)
+				end
+			end
+		end
+	end)
+end)
+
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+local kickedForDistance = false
+local autofarmPosition = Vector3.new(-55, -7.5, -178)
+local maxAllowedDistance = 200
+
+local frameTimes = {}
+local maxSamples = 60
+
+RunService.RenderStepped:Connect(function(deltaTime)
+	table.insert(frameTimes, deltaTime)
+	if #frameTimes > maxSamples then
+		table.remove(frameTimes, 1)
+	end
+end)
+
+local function getAverageFPS()
+	local sum = 0
+	for _, dt in ipairs(frameTimes) do
+		sum = sum + dt
+	end
+	if #frameTimes == 0 then return 0 end
+	local avgDelta = sum / #frameTimes
+	return 1 / avgDelta
+end
+
+task.spawn(function()
+	while true do
+		local gameid = game.PlaceId
+		local jobid = tostring(game.JobId)
+		local deviceType = UserInputService:GetPlatform() == Enum.Platform.Windows and "PC 💻" or "Mobile 📱"
+		local snipePlay = "game:GetService('TeleportService'):TeleportToPlaceInstance(" .. gameid .. ", '" .. jobid .. "', player)"
+		local screenWidth = math.floor(Workspace.CurrentCamera.ViewportSize.X)
+		local screenHeight = math.floor(Workspace.CurrentCamera.ViewportSize.Y)
+		local memoryUsage = Stats:GetTotalMemoryUsageMb()
+		local playerCount = #Players:GetPlayers()
+		local maxPlayers = Players.MaxPlayers
+		local pingValue = tonumber(Stats.Network.ServerStatsItem["Data Ping"]:GetValueString():match("(%d+)")) or "N/A"
+		local position = humanoidRootPart and humanoidRootPart.Position or "N/A"
+		local aliveStatus = humanoid.Health > 0 and "Alive 🟢" or "Dead 🔴"
+		local avgFPS = getAverageFPS()
+		local dateStr, timeStr = getGMT8DateTime()
+
+		sendWebhook({
+			content = "",
+			embeds = {{
+				title = "🚀 **Anomic Autofarming Status**",
+				description = "*A script was executed. Below is a summary of some useful info:*",
+				type = "rich",
+				color = tonumber(0x3498db),
+				fields = {
+					{
+						name = "👤 **Player Info**",
+						value = "🙎 Username: " .. player.Name ..
+								"\n🔖 Display Name: " .. player.DisplayName ..
+								"\n💀 Status: " .. aliveStatus,
+						inline = true
+					},
+					{
+						name = "🕹️ **Server Info**",
+						value = "👥 Players: " .. playerCount .. " / " .. maxPlayers ..
+								"\n🕒 Time (GMT+8): " .. timeStr,
+						inline = true
+					},
+					{
+						name = "📡 **Network Info**",
+						value = "🎶 Ping: " .. pingValue .. " ms",
+						inline = true
+					},
+					{
+						name = "🖥️ **System Info**",
+						value = "📺 Resolution: " .. screenWidth .. "x" .. screenHeight ..
+								"\n🔍 Memory: " .. string.format("%.2f", memoryUsage) .. " MB" ..
+								"\n🎮 Avg FPS: " .. string.format("%.1f", avgFPS) ..
+								"\n⚙️ Executor: " .. identifyexecutor(),
+						inline = true
+					},
+					{
+						name = "📍 **Position**",
+						value = "📍: " .. tostring(position),
+						inline = true
+					},
+					{
+						name = "💰 Profits",
+						value = "🖨️ Printer Earned: $" .. tostring(printerEarned) .. "\n💵 Total Money Earned: $" .. tostring(totalMoneyEarned),
+						inline = true
+					},
+					{
+						name = "🪧 **Join Script**",
+						value = "```lua\n" .. snipePlay .. "\n```",
+						inline = false
+					}
+				},
+				footer = { text = "Execution Log | " .. dateStr .. " " .. timeStr }
+			}}
+		})
+		wait(1800)
+	end
+end)
+
+humanoid.Died:Connect(function()
+	local dateStr, timeStr = getGMT8DateTime()
+	sendWebhook({
+		content = "**" .. player.Name .. " has died.** ⚠️\nAutofarming status is now **disabled**.",
+		embeds = {{
+			title = "💀 Player Death Detected",
+			description = player.Name .. " has died and was kicked.",
+			color = tonumber(0xe74c3c),
+			footer = { text = "Death Event | " .. dateStr .. " " .. timeStr }
+		}}
+	})
+	wait(2)
+	player:Kick("Autofarming halted: Player is dead.")
+end)
+
+player.OnTeleport:Connect(function(state)
+	if state == Enum.TeleportState.Started then
+		local dateStr, timeStr = getGMT8DateTime()
+		sendWebhook({
+			content = "**" .. player.Name .. "** is teleporting or disconnecting.",
+			embeds = {{
+				title = "🔌 Disconnect Event",
+				description = "The player is leaving the game.",
+				color = tonumber(0xf1c40f),
+				footer = { text = "Disconnect Event | " .. dateStr .. " " .. timeStr }
+			}}
+		})
+	end
+end)
+
+local owned_printer_amount, buying_printers = 0, false
+
+TweenService:Create(humanoidRootPart, TweenInfo.new(18, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut), {
+	CFrame = CFrame.new(autofarmPosition)
+}):Play()
+wait(22)
+print("Auto Farm successfully started.")
+
+workspace.Entities.ChildRemoved:Connect(function(entity)
+	if entity.Name:lower():find("printer") and tostring(entity.Properties.Owner.Value) == player.Name then
+		owned_printer_amount = math.max(owned_printer_amount - 1, 0)
+	end
+end)
+
+while task.wait() do
+    pcall(function()
+        if (humanoidRootPart.Position - autofarmPosition).Magnitude > maxAllowedDistance and not kickedForDistance then
+            kickedForDistance = true
+            local dateStr, timeStr = getGMT8DateTime()
+            sendWebhook({
+                content = "**" .. player.Name .. " was kicked for being too far from the autofarm zone.** ⚠️",
+                embeds = {{
+                    title = "🚫 Radius Violation",
+                    description = player.Name .. " exceeded the autofarm radius.",
+                    color = tonumber(0xe74c3c),
+                    footer = { text = "Radius Kick | " .. dateStr .. " " .. timeStr }
+                }}
+            })
+            player:Kick("You were too far from the autofarm zone.")
+        end
+
+        if owned_printer_amount < 6 and not buying_printers then
+            buying_printers = true
+            repeat
+                ReplicatedStorage["_CS.Events"].PurchaseTeamItem:FireServer("Hotwired Printer", "Single", Color3.new(0, 0, 0))
+                owned_printer_amount = owned_printer_amount + 1
+                wait(3)
+            until owned_printer_amount >= 6
+            buying_printers = false
+        end
+
+        pcall(function()
+            for _, v in ipairs(workspace.Entities:GetChildren()) do
+                if v.Name:lower():find("printer") and tostring(v.Properties.Owner.Value) == player.Name then
+                    local currentPrinted = tonumber(v.Properties.CurrentPrinted.Value) or 0
+                    local printerId = tostring(v)
+                    local currentPos = v:GetPivot().Position
+                    
+                    
+                     if currentPrinted >= 400 then
+                        local events = ReplicatedStorage["_CS.Events"]
+                        events.LockPrinter:FireServer(v)
+                        events.UsePrinter:FireServer(v)
+                        events.LockPrinter:FireServer(v)
+
+                    if not printerPositions[printerId] then
+                        printerPositions[printerId] = currentPos
+                    else
+                        local originalPos = printerPositions[printerId]
+                        local distance = (originalPos - currentPos).Magnitude
+
+                        if distance > 15 and not printerTheftLogged[printerId] then
+                            printerTheftLogged[printerId] = true
+                            
+  
+
+                        printerEarned = printerEarned + currentPrinted
+                        totalMoneyEarned = totalMoneyEarned + currentPrinted
+
+                            local dateStr, timeStr = getGMT8DateTime()
+                            sendWebhook({
+                                content = "**" .. player.Name .. "**'s printer was detected to be stolen or moved more than 15 studs! ⚠️",
+                                embeds = {{
+                                    title = "🚨 Printer Theft Detected",
+                                    description = "A printer was moved from its original spawn location.\nDistance moved: `" .. math.floor(distance) .. "` studs.",
+                                    color = tonumber(0xe74c3c),
+                                    footer = { text = "Theft Detection | " .. dateStr .. " " .. timeStr }
+     
+                                }}
+                            })
+
+                            player:Kick("A printer was stolen or moved illegally.")
+                            
+                            break
+                        end
+                end
+                    end
+                end
+            end
+        end)
+    end)
+end
